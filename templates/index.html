@@ -1,1 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Multi-Person Eye Blink & Stress Detection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #f9fafb;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #0f172a, #020617 55%);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 18px 14px 40px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: #9ca3af;
+      margin-bottom: 1.1rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2.1fr) minmax(280px, 1fr);
+      gap: 18px;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .card {
+      background: radial-gradient(circle at top left, #111827, #020617);
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.75);
+    }
+
+    .video-wrapper {
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      position: relative;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+    }
+
+    /* overlay canvas */
+    #overlay-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .pill-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: #e5e7eb;
+      background: linear-gradient(135deg, #0f172a, #020617);
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+      animation: pulse 1.7s infinite ease-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      80% { transform: scale(1.9); opacity: 0; }
+      100% { transform: scale(1.9); opacity: 0; }
+    }
+
+    .right-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .right-title {
+      font-size: 0.95rem;
+      color: #e5e7eb;
+    }
+
+    .count-pill {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: #020617;
+      color: #9ca3af;
+    }
+
+    .persons-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 260px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .person-card {
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: linear-gradient(135deg, #020617, #020617);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .person-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      margin-bottom: 2px;
+    }
+
+    .person-label {
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-ok {
+      color: #22c55e;
+      border-color: rgba(34, 197, 94, 0.7);
+    }
+
+    .badge-warn {
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.7);
+    }
+
+    .badge-high {
+      color: #f97373;
+      border-color: rgba(248, 113, 113, 0.7);
+    }
+
+    .person-metrics {
+      display: flex;
+      gap: 10px;
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .person-metrics span {
+      white-space: nowrap;
+    }
+
+    .logs {
+      font-size: 0.8rem;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-top: 10px;
+    }
+
+    .logs-title {
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+      color: #d1d5db;
+    }
+
+    .log-line {
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.25);
+      color: #9ca3af;
+      word-break: break-word;
+    }
+
+    .charts-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr);
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .charts-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .chart-card-title {
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+      color: #e5e7eb;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      width: 100%;
+      height: 210px;
+    }
+
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    .email-card {
+      margin-top: 18px;
+    }
+
+    .email-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .email-input {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .email-input::placeholder {
+      color: #6b7280;
+    }
+
+    .email-button {
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.85rem;
+      cursor: pointer;
+      background: linear-gradient(135deg, #38bdf8, #2563eb);
+      color: white;
+      font-weight: 500;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .email-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
+    }
+
+    .email-status {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #a5b4fc;
+    }
+
+    .camera-toggle-btn {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 0.75rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s ease, transform 0.1s ease;
+    }
+
+    .camera-toggle-btn:hover {
+      background: #0f172a;
+      transform: translateY(-0.5px);
+    }
+
+    .camera-warning {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      font-size: 0.85rem;
+      padding: 0 16px;
+      text-align: center;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Multi-Person Eye Blink &amp; Stress Detection</h1>
+    <div class="subtitle">
+      Tracks faces simultaneously using MediaPipe FaceMesh and EAR. Each person gets their own blink count &amp; stress level.
+    </div>
+
+    <div class="layout">
+      <!-- Left: Video -->
+      <div class="card">
+        <div class="pill-row">
+          <div class="pill">
+            <span class="pill-dot"></span>
+            <span id="status-text">Waiting for camera permission…</span>
+          </div>
+          <button id="camera-toggle" class="camera-toggle-btn">
+            Start Camera
+          </button>
+        </div>
+        <div class="video-wrapper">
+          <video id="video" autoplay muted playsinline></video>
+          <!-- overlay canvas for labels & eye outlines -->
+          <canvas id="overlay-canvas"></canvas>
+          <div id="camera-msg" class="camera-warning">
+            Allow camera access in your browser to start analysis.
+          </div>
+          <!-- hidden canvas used for capturing frames -->
+          <canvas id="capture-canvas" style="display:none;"></canvas>
+        </div>
+      </div>
+
+      <!-- Right: Persons & Logs -->
+      <div class="card">
+        <div class="right-header">
+          <div class="right-title">Detected Persons</div>
+          <div class="count-pill">
+            <span id="person-count">0</span> active
+          </div>
+        </div>
+
+        <div id="persons-container" class="persons-list"></div>
+
+        <div class="logs">
+          <div class="logs-title">Recent events</div>
+          <div id="logs-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="card">
+      <div class="charts-layout">
+        <div>
+          <div class="chart-card-title">Blink Count per Person (Live)</div>
+          <div class="chart-wrapper">
+            <canvas id="blink-bar-chart"></canvas>
+          </div>
+        </div>
+
+        <div>
+          <div class="chart-card-title">EAR Trend (Last ~60 samples)</div>
+          <div class="chart-wrapper">
+            <canvas id="ear-line-chart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Report Section -->
+    <div class="card email-card">
+      <div class="chart-card-title">Get Your Stress Report by Email</div>
+      <p style="font-size: 0.8rem; color: #9ca3af; margin-top: 4px;">
+        Enter your email and we’ll send a summary of the latest stress metrics along with an AI-generated interpretation.
+      </p>
+      <form class="email-form" method="POST" action="/send_report">
+        <input
+          type="email"
+          name="email"
+          class="email-input"
+          placeholder="you@example.com"
+          required
+        />
+        <button type="submit" class="email-button">Send Report</button>
+      </form>
+      {% if email_status %}
+      <div class="email-status">
+        {{ email_status }}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="footer">
+      Tip: Ask multiple people to sit in front of the camera. Each face will be tagged as P1, P2, P3 with separate blink &amp; stress metrics.
+    </div>
+  </div>
+
+  <script>
+    function stressBadgeClass(stress) {
+      if (!stress) return "badge";
+      const s = stress.toLowerCase();
+      if (s.includes("very high") || s.includes("fatigue")) return "badge badge-high";
+      if (s.includes("high")) return "badge badge-warn";
+      if (s.includes("moderate")) return "badge badge-warn";
+      return "badge badge-ok";
+    }
+
+    const MAX_POINTS = 60;
+    let blinkBarChart = null;
+    let earLineChart = null;
+    const personDatasetMap = {};
+    const chartColors = ["#38bdf8", "#22c55e", "#f97316"];
+
+    let stream = null;
+    let captureRunning = false;
+    let cameraActive = false;
+
+    let overlayCanvas = null;
+    let overlayCtx = null;
+
+    function initCharts() {
+      const blinkCtx = document.getElementById("blink-bar-chart").getContext("2d");
+      const earCtx = document.getElementById("ear-line-chart").getContext("2d");
+
+      blinkBarChart = new Chart(blinkCtx, {
+        type: "bar",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Blinks",
+              data: [],
+              backgroundColor: "rgba(56, 189, 248, 0.6)",
+              borderRadius: 6,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: {
+              ticks: { color: "#9ca3af", font: { size: 10 } },
+              grid: { display: false }
+            },
+            y: {
+              ticks: { color: "#9ca3af", font: { size: 10 } },
+              grid: { color: "rgba(55,65,81,0.6)" },
+              beginAtZero: true
+            }
+          },
+          animation: false
+        }
+      });
+
+      earLineChart = new Chart(earCtx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: []
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: "#e5e7eb",
+                font: { size: 10 }
+              }
+            },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: function(ctx) {
+                  const v = ctx.parsed.y;
+                  return (v == null ? "No data" : `EAR: ${v.toFixed(3)}`);
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { display: false },
+              grid: { display: false }
+            },
+            y: {
+              ticks: { color: "#9ca3af", font: { size: 10 } },
+              grid: { color: "rgba(55,65,81,0.6)" }
+            }
+          },
+          elements: {
+            line: { tension: 0.25 },
+            point: { radius: 0 }
+          },
+          animation: false
+        }
+      });
+    }
+
+    function ensureDatasetForPerson(label) {
+      if (personDatasetMap[label] !== undefined) {
+        return earLineChart.data.datasets[personDatasetMap[label]];
+      }
+      const colorIndex = earLineChart.data.datasets.length % chartColors.length;
+      const color = chartColors[colorIndex];
+
+      const ds = {
+        label: label,
+        data: [],
+        borderColor: color,
+        backgroundColor: "rgba(0,0,0,0)",
+        borderWidth: 2,
+        spanGaps: true
+      };
+
+      const len = earLineChart.data.labels.length;
+      for (let i = 0; i < len - 1; i++) {
+        ds.data.push(null);
+      }
+      earLineChart.data.datasets.push(ds);
+      personDatasetMap[label] = earLineChart.data.datasets.length - 1;
+      return ds;
+    }
+
+    function syncDatasetsWithPersons(persons) {
+      const activeLabels = new Set(persons.map(p => p.label || `P${p.id}`));
+
+      earLineChart.data.datasets = earLineChart.data.datasets.filter(ds => activeLabels.has(ds.label));
+
+      Object.keys(personDatasetMap).forEach(label => {
+        if (!activeLabels.has(label)) {
+          delete personDatasetMap[label];
+        }
+      });
+      earLineChart.data.datasets.forEach((ds, idx) => {
+        personDatasetMap[ds.label] = idx;
+      });
+    }
+
+    function updateCharts(persons) {
+      if (!blinkBarChart || !earLineChart) return;
+
+      if (persons.length === 0) {
+        blinkBarChart.data.labels = [];
+        blinkBarChart.data.datasets[0].data = [];
+        blinkBarChart.update("none");
+
+        earLineChart.data.labels = [];
+        earLineChart.data.datasets = [];
+        Object.keys(personDatasetMap).forEach(k => delete personDatasetMap[k]);
+        earLineChart.update("none");
+        return;
+      }
+
+      syncDatasetsWithPersons(persons);
+
+      const labels = persons.map(p => p.label || `P${p.id}`);
+      const blinkValues = persons.map(p => p.blinks ?? 0);
+
+      blinkBarChart.data.labels = labels;
+      blinkBarChart.data.datasets[0].data = blinkValues;
+      blinkBarChart.update("none");
+
+      const now = new Date();
+      const timeLabel = now.toLocaleTimeString(undefined, { hour12: false });
+
+      earLineChart.data.labels.push(timeLabel);
+      if (earLineChart.data.labels.length > MAX_POINTS) {
+        earLineChart.data.labels.shift();
+      }
+
+      earLineChart.data.datasets.forEach(ds => {
+        ds.data.push(null);
+        if (ds.data.length > MAX_POINTS) {
+          ds.data.shift();
+        }
+      });
+
+      const lastIndex = earLineChart.data.labels.length - 1;
+      persons.forEach(p => {
+        const label = p.label || `P${p.id}`;
+        const ds = ensureDatasetForPerson(label);
+
+        while (ds.data.length < earLineChart.data.labels.length) {
+          ds.data.unshift(null);
+        }
+        ds.data[lastIndex] = p.ear ?? null;
+      });
+
+      earLineChart.update("none");
+    }
+
+    function drawOverlays(persons) {
+      if (!overlayCanvas || !overlayCtx) return;
+
+      const videoEl = document.getElementById("video");
+      if (!videoEl) return;
+
+      const rect = videoEl.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      // handle HiDPI
+      const dpr = window.devicePixelRatio || 1;
+      overlayCanvas.width = rect.width * dpr;
+      overlayCanvas.height = rect.height * dpr;
+      overlayCanvas.style.width = rect.width + "px";
+      overlayCanvas.style.height = rect.height + "px";
+
+      overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      overlayCtx.clearRect(0, 0, rect.width, rect.height);
+
+      if (!cameraActive || persons.length === 0) return;
+
+      persons.forEach(p => {
+        const ov = p.overlay;
+        if (!ov) return;
+
+        const cx = ov.cx * rect.width;
+        const cy = ov.cy * rect.height;
+
+        // draw eyes
+        const eyes = [ov.left_eye, ov.right_eye];
+        overlayCtx.lineWidth = 2;
+        overlayCtx.strokeStyle = "#22c55e"; // green
+        eyes.forEach(eye => {
+          if (!eye || eye.length === 0) return;
+          overlayCtx.beginPath();
+          eye.forEach((pt, idx) => {
+            const ex = pt[0] * rect.width;
+            const ey = pt[1] * rect.height;
+            if (idx === 0) overlayCtx.moveTo(ex, ey);
+            else overlayCtx.lineTo(ex, ey);
+          });
+          overlayCtx.closePath();
+          overlayCtx.stroke();
+        });
+
+        // label + text
+        overlayCtx.font = "16px monospace";
+        overlayCtx.fillStyle = "#00ffff"; // cyan
+        overlayCtx.fillText(p.label || `P${p.id}`, cx - 40, cy - 40);
+
+        overlayCtx.font = "14px monospace";
+        overlayCtx.fillStyle = "#ff4444"; // red
+        overlayCtx.fillText(`Blinks: ${p.blinks ?? 0}`, cx - 60, cy - 20);
+
+        overlayCtx.fillStyle = "#facc15"; // yellow
+        overlayCtx.fillText(`EAR: ${(p.ear ?? 0).toFixed(3)}`, cx - 60, cy - 4);
+
+        overlayCtx.fillStyle = "#22c55e"; // green
+        overlayCtx.fillText(`Stress: ${p.stress || "Calibrating"}`, cx - 60, cy + 12);
+      });
+    }
+
+    async function fetchMetrics() {
+      try {
+        const res = await fetch("/metrics", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const persons = data.persons || [];
+        const logs = data.logs || [];
+
+        document.getElementById("person-count").textContent = persons.length;
+        const status = document.getElementById("status-text");
+        if (!cameraActive) {
+          status.textContent = "Camera not started";
+        } else if (persons.length === 0) {
+          status.textContent = "Camera on… no faces detected";
+        } else {
+          status.textContent = `Camera on… ${persons.length} person(s) detected`;
+        }
+
+        const container = document.getElementById("persons-container");
+        container.innerHTML = "";
+
+        if (persons.length === 0) {
+          const empty = document.createElement("div");
+          empty.style.fontSize = "0.8rem";
+          empty.style.color = "#9ca3af";
+          empty.textContent = "No active faces in frame. Sit in front of the camera to start calibration.";
+          container.appendChild(empty);
+        } else {
+          persons.forEach(p => {
+            const card = document.createElement("div");
+            card.className = "person-card";
+
+            const header = document.createElement("div");
+            header.className = "person-header";
+
+            const label = document.createElement("div");
+            label.className = "person-label";
+            label.textContent = p.label || `Person ${p.id}`;
+
+            const badge = document.createElement("div");
+            badge.className = stressBadgeClass(p.stress);
+            badge.textContent = p.stress || "Calibrating";
+
+            header.appendChild(label);
+            header.appendChild(badge);
+
+            const metrics = document.createElement("div");
+            metrics.className = "person-metrics";
+            const blinks = document.createElement("span");
+            blinks.textContent = `Blinks: ${p.blinks ?? 0}`;
+            const ear = document.createElement("span");
+            ear.textContent = `EAR: ${(p.ear ?? 0).toFixed(3)}`;
+
+            metrics.appendChild(blinks);
+            metrics.appendChild(ear);
+
+            card.appendChild(header);
+            card.appendChild(metrics);
+            container.appendChild(card);
+          });
+        }
+
+        const logsBox = document.getElementById("logs-box");
+        logsBox.innerHTML = "";
+        logs.forEach(line => {
+          const div = document.createElement("div");
+          div.className = "log-line";
+          div.textContent = line;
+          logsBox.appendChild(div);
+        });
+
+        updateCharts(persons);
+        drawOverlays(persons);
+      } catch (err) {
+        console.error("Error fetching /metrics:", err);
+        document.getElementById("status-text").textContent = "Connection issue…";
+      }
+    }
+
+    function startCaptureLoop() {
+      if (captureRunning) return;
+      captureRunning = true;
+
+      const videoEl = document.getElementById("video");
+      const canvas = document.getElementById("capture-canvas");
+      const ctx = canvas.getContext("2d");
+      const TARGET_FPS = 3; // send ~3 frames/sec to server
+
+      async function capture() {
+        if (!cameraActive || !stream) {
+          captureRunning = false;
+          return;
+        }
+
+        const w = videoEl.videoWidth;
+        const h = videoEl.videoHeight;
+        if (w === 0 || h === 0) {
+          requestAnimationFrame(capture);
+          return;
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(videoEl, 0, 0, w, h);
+
+        canvas.toBlob(async (blob) => {
+          if (!blob || !cameraActive) {
+            requestAnimationFrame(capture);
+            return;
+          }
+          try {
+            const formData = new FormData();
+            formData.append("frame", blob, "frame.jpg");
+            await fetch("/process_frame", {
+              method: "POST",
+              body: formData
+            });
+          } catch (e) {
+            console.error("Error sending frame:", e);
+          }
+          setTimeout(() => requestAnimationFrame(capture), 1000 / TARGET_FPS);
+        }, "image/jpeg", 0.7);
+      }
+
+      requestAnimationFrame(capture);
+    }
+
+    async function startCamera() {
+      const videoEl = document.getElementById("video");
+      const status = document.getElementById("status-text");
+      const msg = document.getElementById("camera-msg");
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
+        videoEl.srcObject = stream;
+        cameraActive = true;
+        msg.style.display = "none";
+        status.textContent = "Camera active. Sit in front of the camera.";
+        startCaptureLoop();
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        cameraActive = false;
+        status.textContent = "Cannot access camera. Check permissions.";
+        msg.textContent = "Camera access blocked. Enable it in browser site settings and click Start Camera again.";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      overlayCanvas = document.getElementById("overlay-canvas");
+      overlayCtx = overlayCanvas.getContext("2d");
+
+      initCharts();
+      fetchMetrics();
+      setInterval(fetchMetrics, 600);
+
+      const toggleBtn = document.getElementById("camera-toggle");
+      const videoEl = document.getElementById("video");
+      const statusText = document.getElementById("status-text");
+
+      toggleBtn.addEventListener("click", async () => {
+        // If camera hasn't been started yet, start it
+        if (!cameraActive && !stream) {
+          toggleBtn.disabled = true;
+          toggleBtn.textContent = "Starting…";
+          await startCamera();
+          toggleBtn.disabled = false;
+          toggleBtn.textContent = "Hide Camera";
+          return;
+        }
+
+        // Camera is active: toggle only visibility (analysis keeps running)
+        if (videoEl.style.display === "none") {
+          videoEl.style.display = "block";
+          toggleBtn.textContent = "Hide Camera";
+          if (cameraActive) {
+            statusText.textContent = "Camera active. Sit in front of the camera.";
+          }
+        } else {
+          videoEl.style.display = "none";
+          toggleBtn.textContent = "Show Camera";
+          if (cameraActive) {
+            statusText.textContent = "Camera hidden, analysis still running…";
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
 
